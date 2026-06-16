@@ -40,7 +40,7 @@ install              failure   log      + fork    + cache
 | Detect runaway loops | `agentautopsy loops` | Never get a surprise $400 bill again |
 | Monitor context usage | `agentautopsy context --run-id <id>` | See exactly which step is eating your context |
 
-##Quick Start
+## Quick Start
 
 ```bash
 pip install agentautopsy
