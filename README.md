@@ -9,7 +9,6 @@
 The post-mortem debugger for AI agents. When your agent fails silently — AgentAutopsy tells you exactly why.
 
 ## Lifecycle
-
 ```
 Install  →  Watch  →  Fail  →  Trace  →  Replay  →  Fix
    │          │        │         │          │        │
