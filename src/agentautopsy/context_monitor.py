@@ -310,7 +310,7 @@ class ContextMonitor:
             "model": model,
             "context_limit": context_limit,
             "tokens_used": tokens_used,
-            "pct_used": round(pct * 100, 2),
+            "pct_used": round(pct * 100, 4),
             "alert_level": alert_level,
             "breakdown": breakdown,
             "suggestions": suggestions,

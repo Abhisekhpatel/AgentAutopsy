@@ -257,7 +257,7 @@ class LoopDetector:
 
             # ── Recursion tracking ────────────────────────────────────────
             agent = calling_agent or self.agent_name
-            if event_type in TRACKABLE_CALL_TYPES and calling_agent:
+            if event_type == "agent_call" and calling_agent:
                 self._recursion_counts[agent] = self._recursion_counts.get(agent, 0) + 1
 
             step = step_number or self._steps
