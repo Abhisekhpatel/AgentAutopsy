@@ -24,7 +24,6 @@ current_causality_id: contextvars.ContextVar[str | None] = contextvars.ContextVa
     default=None,
 )
 
-
 def get_db() -> Database:
     # Enforce WAL mode and extended timeouts for massive swarm concurrency
     conn = sqlite3.connect(
@@ -35,7 +34,6 @@ def get_db() -> Database:
     db.execute("PRAGMA synchronous=NORMAL;")
     return db
 
-
 def _ensure_events_observability_columns(db: Database) -> None:
     if not db["events"].exists():
         return
@@ -43,7 +41,6 @@ def _ensure_events_observability_columns(db: Database) -> None:
     for name, col_type in OBSERVABILITY_COLUMNS.items():
         if name not in existing:
             db["events"].add_column(name, col_type)
-
 
 def _ensure_runs_agent_columns(db: Database) -> None:
     if not db["runs"].exists():
@@ -55,7 +52,6 @@ def _ensure_runs_agent_columns(db: Database) -> None:
         db["runs"].add_column("agent_name", str)
     if "causality_thread_id" not in existing:
         db["runs"].add_column("causality_thread_id", str)
-
 
 def create_tables(db: Database) -> None:
     db["runs"].create(
@@ -90,11 +86,12 @@ def create_tables(db: Database) -> None:
     _ensure_events_observability_columns(db)
     _ensure_runs_agent_columns(db)
     from agentautopsy.dvr_replay import ensure_dvr_tables
+    from agentautopsy.fingerprint import ensure_fingerprint_tables
     from agentautopsy.schema_drift import ensure_schema_tables
 
     ensure_schema_tables(db)
     ensure_dvr_tables(db)
-
+    ensure_fingerprint_tables(db)
 
 def insert_run(
     db: Database,
@@ -127,7 +124,6 @@ def insert_run(
     db["runs"].insert(row, pk="id")
     return run_id
 
-
 def insert_event(
     db: Database,
     run_id: str,
@@ -159,19 +155,15 @@ def insert_event(
         row["cost_usd"] = cost_usd
     db["events"].insert(row, pk="id")
 
-
 def mark_run_status(db: Database, run_id: str, status: str) -> None:
     if db["runs"].exists() and db["runs"].get(run_id) is not None:
         db["runs"].update(run_id, {"status": status})
 
-
 def mark_run_failed(db: Database, run_id: str) -> None:
     mark_run_status(db, run_id, "failed")
 
-
 def mark_run_completed(db: Database, run_id: str) -> None:
     mark_run_status(db, run_id, "completed")
-
 
 def prune_old_runs(db: Database, days: int = 7) -> int:
     import datetime
@@ -193,7 +185,6 @@ def prune_old_runs(db: Database, days: int = 7) -> int:
     db.execute(f"DELETE FROM runs WHERE id IN ({placeholders})", old_runs)  # nosec B608
     db.execute("VACUUM;")
     return len(old_runs)
-
 
 if __name__ == "__main__":
     db = get_db()

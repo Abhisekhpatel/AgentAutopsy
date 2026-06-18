@@ -7,25 +7,25 @@ from agentautopsy.cache import cache_stats, setup_cache
 from agentautopsy.db import create_tables, get_db
 from agentautopsy.reporter import print_report
 
-
 def _usage() -> None:
     print(
         """Usage: agentautopsy <command>
 
 Commands:
-  runs              List all runs (id, start_time, status)
-  agents            List multi-agent run chains
-  replay <run_id>   Print the event report for a run
-  replay --run-id <id> --from-step <n>   DVR replay from a step
-  share <run_id>    Export a run trace to a shareable JSON file
-  fix <run_id>      Apply an automated fix for a failed run
-  generate-evals    Generate pytest tests from all recorded failures
-  loops             Show all detected loops from recorded runs
-  context           Show context window usage across all runs
-  stats             Show fix cache statistics
-  serve             Start HTTP API for Monadix (POST /analyze)
-  ui                Open the web UI in your browser
-  mcp <cmd...>      Run an MCP server and proxy stdio to trace it
+  runs                    List all runs (id, start_time, status)
+  agents                  List multi-agent run chains
+  replay <run_id>         Print the event report for a run
+  replay --run-id <id> --from-step <n>  DVR replay from a step
+  share <run_id>          Export a run trace to a shareable JSON file
+  fix <run_id>            Apply an automated fix for a failed run
+  generate-evals          Generate pytest tests from all recorded failures
+  loops                   Show all detected loops from recorded runs
+  context                 Show context window usage across all runs
+  patterns                List known failure patterns sorted by frequency
+  stats                   Show fix cache statistics
+  serve                   Start HTTP API for Monadix (POST /analyze)
+  ui                      Open the web UI in your browser
+  mcp <cmd...>            Run an MCP server and proxy stdio to trace it
 
 Examples:
   agentautopsy runs
@@ -40,12 +40,12 @@ Examples:
   agentautopsy loops --run-id abc-123-def
   agentautopsy context
   agentautopsy context --run-id abc-123-def
+  agentautopsy patterns
   agentautopsy prune [days]
   agentautopsy stats
   agentautopsy serve
   agentautopsy ui"""
     )
-
 
 def main() -> None:
     argv = sys.argv[1:]
@@ -227,14 +227,14 @@ def main() -> None:
         if not events:
             print("No loop events recorded.")
         else:
-            print(f"{'TYPE':<22} {'RUN':<14} {'STEP':>5} {'TOKENS':>8} {'COST':>9}  LABEL")
+            print(f"{'TYPE':<22} {'RUN':<14} {'STEP':>5} {'TOKENS':>8} {'COST':>9} LABEL")
             print("─" * 90)
             for ev in events:
                 rid = ev["run_id"][:12] + "..."
                 killed_marker = " [killed]" if ev["killed"] else ""
                 print(
                     f"{ev['loop_type']:<22} {rid:<14} {ev['trigger_step']:>5} "
-                    f"{ev['total_tokens']:>8} ${ev['total_cost_usd']:>7.4f}  "
+                    f"{ev['total_tokens']:>8} ${ev['total_cost_usd']:>7.4f} "
                     f"{ev['trigger_label']}{killed_marker}"
                 )
 
@@ -264,7 +264,7 @@ def main() -> None:
                 print(f"No context snapshots found for run {run_id_arg}.")
                 return
             print(f"\nContext window usage for run {run_id_arg}")
-            print(f"{'STEP':>5}  {'MODEL':<20} {'TOKENS':>8}  {'LIMIT':>8}  {'%':>7}  LEVEL")
+            print(f"{'STEP':>5} {'MODEL':<20} {'TOKENS':>8} {'LIMIT':>8} {'%':>7} LEVEL")
             print("─" * 72)
             for s in snaps:
                 level_color = (
@@ -273,21 +273,21 @@ def main() -> None:
                     else "\033[38;5;82m"
                 )
                 print(
-                    f"{s['step']:>5}  {s['model']:<20} {s['tokens_used']:>8}  "
-                    f"{s['context_limit']:>8}  {s['pct_used']:>6.1f}%  "
+                    f"{s['step']:>5} {s['model']:<20} {s['tokens_used']:>8} "
+                    f"{s['context_limit']:>8} {s['pct_used']:>6.1f}% "
                     f"{level_color}{s['alert_level']}\033[0m"
                 )
                 if s.get("truncation_suspected"):
-                    print(f"       \033[38;5;208m⚠ Silent truncation suspected at step {s['step']}\033[0m")
+                    print(f"  \033[38;5;208m⚠ Silent truncation suspected at step {s['step']}\033[0m")
                 for sug in s.get("suggestions") or []:
-                    print(f"       \033[38;5;244m→ {sug}\033[0m")
+                    print(f"  \033[38;5;244m→ {sug}\033[0m")
         else:
             ui_data = load_context_ui_data(db)
             by_run = ui_data.get("by_run", {})
             if not by_run:
                 print("No context data recorded yet. Run agentautopsy.watch() first.")
                 return
-            print(f"\n{'RUN':<14} {'AGENT':<18} {'MODEL':<18} {'TOKENS':>8}  {'LIMIT':>8}  {'%':>7}  ALERT")
+            print(f"\n{'RUN':<14} {'AGENT':<18} {'MODEL':<18} {'TOKENS':>8} {'LIMIT':>8} {'%':>7} ALERT")
             print("─" * 90)
             for rid, info in by_run.items():
                 snaps = info.get("steps") or []
@@ -302,10 +302,40 @@ def main() -> None:
                 short_rid = rid[:12] + "..."
                 print(
                     f"{short_rid:<14} {info['agent_name']:<18} {info['model']:<18} "
-                    f"{latest['tokens_used']:>8}  {info['context_limit']:>8}  "
-                    f"{info['latest_pct']:>6.1f}%  "
+                    f"{latest['tokens_used']:>8} {info['context_limit']:>8} "
+                    f"{info['latest_pct']:>6.1f}% "
                     f"{level_color}{info['alert_level']}\033[0m"
                 )
+        return
+
+    if cmd == "patterns":
+        from agentautopsy.fingerprint import ensure_fingerprint_tables, list_fingerprints
+
+        ensure_fingerprint_tables(db)
+        records = list_fingerprints(db)
+        if not records:
+            print("No failure patterns recorded yet.")
+            return
+        print(
+            f"\n{'FINGERPRINT':<12} {'OCCURRENCES':>11} {'CONFIDENCE':<12} "
+            f"{'ERROR TYPE':<25} {'TOOL':<20} {'POSITION':<8} FIX"
+        )
+        print("─" * 100)
+        for rec in records:
+            fp_id = rec["fingerprint_id"]
+            count = rec["occurrence_count"]
+            confidence = rec["confidence"]
+            error_type = (rec.get("error_type") or "")[:24]
+            tool = (rec.get("failing_tool") or "")[:19]
+            position = rec.get("step_position") or ""
+            has_fix = "✓" if rec.get("example_fix") else " "
+            print(
+                f"{fp_id:<12} {count:>11}   {confidence:<12} "
+                f"{error_type:<25} {tool:<20} {position:<8} {has_fix}"
+            )
+        print()
+        total = sum(r["occurrence_count"] for r in records)
+        print(f"{len(records)} pattern(s) · {total} total occurrence(s)")
         return
 
     if cmd == "stats":
@@ -364,7 +394,7 @@ def main() -> None:
 
     if cmd == "mcp":
         if len(argv) < 2:
-            print("usage: agentautopsy mcp <command> [args...]", file=sys.stderr)
+            print("usage: agentautopsy mcp [args...]", file=sys.stderr)
             sys.exit(2)
         mcp_cmd = argv[1:]
         from agentautopsy.mcp_interceptor import run_mcp_proxy

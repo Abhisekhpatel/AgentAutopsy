@@ -25,16 +25,17 @@ __all__ = [
     "LoopDetector",
     "MCPAutopsy",
     "SchemaDriftDetector",
+    "generate_fingerprint",
     "get_callback_handler",
     "get_crewai_handler",
     "get_langgraph_handler",
+    "list_fingerprints",
     "watch",
     "watch_mcp",
 ]
 
 _watch_context: tuple[str, object] | None = None
 _mcp_autopsy: object | None = None
-
 
 def get_callback_handler():
     """Return a LangChain callback handler for the active watch() run."""
@@ -45,7 +46,6 @@ def get_callback_handler():
 
     return AgentAutopsyCallbackHandler(run_id, db)
 
-
 def get_langgraph_handler():
     """Return a LangGraph callback handler for the active watch() run."""
     if _watch_context is None:
@@ -54,7 +54,6 @@ def get_langgraph_handler():
     from agentautopsy.langgraph_handler import AgentAutopsyLangGraphHandler
 
     return AgentAutopsyLangGraphHandler(run_id, db)
-
 
 def get_crewai_handler():
     """Return a CrewAI callback handler for the active watch() run."""
@@ -65,6 +64,19 @@ def get_crewai_handler():
 
     return AgentAutopsyCrewAIHandler(run_id, db)
 
+def generate_fingerprint(trace: dict) -> str:  # type: ignore[type-arg]
+    """Generate a failure fingerprint for a trace dict.  See fingerprint.py."""
+    from agentautopsy.fingerprint import generate_fingerprint as _gf
+
+    return _gf(trace)
+
+def list_fingerprints() -> list:  # type: ignore[type-arg]
+    """Return all stored failure fingerprints sorted by occurrence count."""
+    from agentautopsy.fingerprint import list_fingerprints as _lf
+
+    db = get_db()
+    create_tables(db)
+    return _lf(db)
 
 def watch_mcp(
     server_name: str | None = None,
@@ -81,7 +93,6 @@ def watch_mcp(
         parent_run_id=parent_run_id,
     )
     return _mcp_autopsy
-
 
 def watch(
     agent_name: str | None = None,
@@ -139,21 +150,21 @@ def watch(
     time.sleep(0.1)
     print("\033[1;38;5;82m⚡ [AgentAutopsy] Engine Initialized\033[0m")
     time.sleep(0.1)
-    print(f"\033[38;5;244m▶ Target:  \033[1;37m{label}\033[0m")
+    print(f"\033[38;5;244m▶ Target: \033[1;37m{label}\033[0m")
     time.sleep(0.1)
     print(f"\033[38;5;244m▶ Session: \033[38;5;141m{run_id}\033[0m")
     time.sleep(0.1)
     if parent_run_id:
-        print(f"\033[38;5;244m▶ Parent:  \033[38;5;141m{parent_run_id}\033[0m")
+        print(f"\033[38;5;244m▶ Parent: \033[38;5;141m{parent_run_id}\033[0m")
         time.sleep(0.1)
     print(
-        "\033[38;5;244m▶ Status:  \033[38;5;11mIntercepting LLM & HTTP Traffic in real-time...\033[0m"
+        "\033[38;5;244m▶ Status: \033[38;5;11mIntercepting LLM & HTTP Traffic in real-time...\033[0m"
     )
     time.sleep(0.1)
     print("\033[38;5;39m" + "━" * 60 + "\033[0m\n")
 
     def on_exit():
-        from agentautopsy.analyzer import analyze
+        from agentautopsy.analyzer import _parse_analysis, analyze
         from agentautopsy.cache import lookup_fix, store_fix
         from agentautopsy.detector import detect_failure, take_snapshot
         from agentautopsy.pruner import prune
@@ -183,7 +194,7 @@ def watch(
                 cost = loop_stats.get("total_cost_usd", 0)
                 tokens = loop_stats.get("total_tokens", 0)
                 print(
-                    f"\033[38;5;244m▶ Cost:   \033[38;5;82m${cost:.4f}\033[38;5;244m  Tokens: {tokens}\033[0m"
+                    f"\033[38;5;244m▶ Cost: \033[38;5;82m${cost:.4f}\033[38;5;244m Tokens: {tokens}\033[0m"
                 )
                 time.sleep(0.1)
             if ctx_pct:
@@ -216,9 +227,39 @@ def watch(
         if eval_path:
             time.sleep(0.1)
             print(
-                f"\033[38;5;244m▶ Eval:  \033[1;38;5;82mRegression test generated → {eval_path}\033[0m"
+                f"\033[38;5;244m▶ Eval: \033[1;38;5;82mRegression test generated → {eval_path}\033[0m"
             )
 
+        # Build the snapshot now — needed for both fingerprinting and analysis.
+        snapshot = take_snapshot(run_id, db)
+        pruned = prune(snapshot, result.get("failure_event_id"))
+
+        # ------------------------------------------------------------------
+        # Fingerprint check — instant lookup, zero AI calls
+        # ------------------------------------------------------------------
+        from agentautopsy.fingerprint import (
+            ensure_fingerprint_tables,
+            generate_fingerprint as _gen_fp,
+            match_fingerprint,
+            print_fingerprint_match,
+            record_fingerprint,
+            update_fingerprint_fix,
+        )
+        ensure_fingerprint_tables(db)
+        _fp_trace = {**result, "events": pruned}
+        _fp_id = _gen_fp(_fp_trace)
+        _fp_match = match_fingerprint(db, _fp_id)
+
+        if _fp_match and _fp_match.get("example_fix"):
+            # Known pattern with a stored fix — surface it immediately.
+            record_fingerprint(db, _fp_id, _fp_trace)
+            print_fingerprint_match(_fp_id, _fp_match)
+            print_report(run_id, db)
+            return
+
+        # ------------------------------------------------------------------
+        # Cache check (error-type + message hash, no AI)
+        # ------------------------------------------------------------------
         cached = lookup_fix(db, result["error_type"], result["message"])
         if cached:
             time.sleep(0.8)
@@ -231,11 +272,13 @@ def watch(
             )
             time.sleep(0.1)
             print(cached)
+            record_fingerprint(db, _fp_id, _fp_trace)
             return
 
-        snapshot = take_snapshot(run_id, db)
-        pruned = prune(snapshot, result["failure_event_id"])
-
+        # ------------------------------------------------------------------
+        # Full AI analysis
+        # ------------------------------------------------------------------
+        _fp_fix: str | None = None
         try:
             analysis = analyze(pruned, result)
             print(f"\n[AgentAutopsy] analysis:\n{analysis}")
@@ -248,6 +291,10 @@ def watch(
                 store_fix(
                     db, result["error_type"], result["message"], analysis, verified=True
                 )
+                # Extract the structured FIX line to store in the fingerprint
+                _, _fp_fix = _parse_analysis(analysis)
+                if _fp_fix:
+                    update_fingerprint_fix(db, _fp_id, _fp_fix)
             else:
                 print("\n[AgentAutopsy] fix not verified — review manually")
         except Exception as e:
@@ -257,6 +304,9 @@ def watch(
                 )
             else:
                 print(f"\n[AgentAutopsy] Auto-fix failed: {e}")
+        finally:
+            # Always record this occurrence so the pattern accumulates over time.
+            record_fingerprint(db, _fp_id, _fp_trace, fix=_fp_fix)
 
         print_report(run_id, db)
 
