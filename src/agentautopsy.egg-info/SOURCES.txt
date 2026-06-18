@@ -34,8 +34,6 @@ src/agentautopsy/ui.py
 src/agentautopsy.egg-info/PKG-INFO
 src/agentautopsy.egg-info/SOURCES.txt
 src/agentautopsy.egg-info/dependency_links.txt
-src/agentautopsy.egg-info/entry_points.txt
-src/agentautopsy.egg-info/requires.txt
 src/agentautopsy.egg-info/top_level.txt
 tests/test_analyzer.py
 tests/test_api.py
