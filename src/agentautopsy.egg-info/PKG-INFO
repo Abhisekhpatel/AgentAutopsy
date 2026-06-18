@@ -56,6 +56,8 @@ install              failure   log      + fork    + cache
 | Trace MCP servers | `MCPAutopsy().watch_mcp_server()` | Every MCP call recorded |
 | Fork and fix | `DVRReplay().fork(run_id, at_step=3)` | Branch from any step |
 | Generate tests from failures | `agentautopsy generate-evals` | Never fix the same bug twice |
+| Detect runaway loops | `agentautopsy loops` | Never get a surprise $400 bill again |
+| Monitor context usage | `agentautopsy context --run-id <id>` | See exactly which step is eating your context |
 
 ## Quick Start
 
@@ -82,6 +84,8 @@ agentautopsy.watch()
 | **Prompt Diffing** | Compare runs side by side | Optimizing agent behavior |
 | **Contract Checkpointing** | Enforces Pydantic schemas and checkpoints valid states | Preventing late-stage failures caused by early bad data |
 | **Automatic Eval Generation** | Generates pytest test cases from every failure automatically | When you want to make sure the same failure never happens again |
+| **Runaway Loop Detector** | Detects repeated tool calls and kills agent when cost exceeds threshold | When you want to prevent $400 bills from runaway agents |
+| **Context Window Monitor** | Tracks context usage per step, warns at 70% and 90%, detects silent truncation | When your agent starts giving garbage answers near context limit |
 
 ## Framework Support
 
@@ -130,6 +134,24 @@ from agentautopsy import EvalGenerator
 
 gen = EvalGenerator()
 gen.generate_all()  # generates tests from all recorded failures
+```
+
+### Loop Detector
+
+```python
+from agentautopsy import LoopDetector
+
+detector = LoopDetector(max_cost_usd=1.00, max_iterations=20)
+detector.watch()
+```
+
+### Context Monitor
+
+```python
+from agentautopsy import ContextMonitor
+
+monitor = ContextMonitor()
+monitor.watch()
 ```
 
 ### Contract Checkpointing
