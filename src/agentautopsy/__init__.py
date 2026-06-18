@@ -17,8 +17,10 @@ from agentautopsy.eval_generator import EvalGenerator
 from agentautopsy.loop_detector import LoopDetector
 from agentautopsy.schema_drift import SchemaDriftDetector
 from agentautopsy.context_monitor import ContextMonitor
+from agentautopsy.context_health import ContextHealthTracker
 
 __all__ = [
+    "ContextHealthTracker",
     "ContextMonitor",
     "DVRReplay",
     "EvalGenerator",
@@ -65,7 +67,7 @@ def get_crewai_handler():
     return AgentAutopsyCrewAIHandler(run_id, db)
 
 def generate_fingerprint(trace: dict) -> str:  # type: ignore[type-arg]
-    """Generate a failure fingerprint for a trace dict.  See fingerprint.py."""
+    """Generate a failure fingerprint for a trace dict. See fingerprint.py."""
     from agentautopsy.fingerprint import generate_fingerprint as _gf
 
     return _gf(trace)
@@ -119,6 +121,8 @@ def watch(
     EvalGenerator(db=db, run_id=run_id, agent_name=agent_name or "agent").watch()
     LoopDetector(db=db, run_id=run_id, agent_name=agent_name or "agent").watch()
     ContextMonitor(db=db, run_id=run_id, agent_name=agent_name or "agent").watch()
+    # Context Decay Detector — wraps interceptors last so it fires after all other hooks
+    ContextHealthTracker(db=db, run_id=run_id, agent_name=agent_name or "agent").watch()
 
     import sys
 
@@ -182,6 +186,12 @@ def watch(
 
             ctx_mon = get_active_monitor()
             ctx_pct = ctx_mon.current_pct() if ctx_mon else 0.0
+
+            from agentautopsy.context_health import get_active_tracker
+
+            ctx_health = get_active_tracker()
+            ctx_health_score = ctx_health.current_score() if ctx_health else 100.0
+
             print("\n\033[38;5;39m" + "━" * 60 + "\033[0m")
             time.sleep(0.1)
             print("\033[1;38;5;82m✅ [AgentAutopsy] Analysis Complete\033[0m")
@@ -201,6 +211,16 @@ def watch(
                 ctx_color = "82" if ctx_pct < 70 else ("226" if ctx_pct < 90 else "196")
                 print(
                     f"\033[38;5;244m▶ Context: \033[38;5;{ctx_color}m{ctx_pct:.1f}% of window used\033[0m"
+                )
+                time.sleep(0.1)
+            if ctx_health_score < 100.0:
+                health_color = (
+                    "82" if ctx_health_score >= 80
+                    else "226" if ctx_health_score >= 60
+                    else "208"
+                )
+                print(
+                    f"\033[38;5;244m▶ Context health: \033[38;5;{health_color}m{ctx_health_score:.0f}%\033[0m"
                 )
                 time.sleep(0.1)
             print(
