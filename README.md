@@ -151,7 +151,6 @@ checkpointer = ContractCheckpointer(run_id)
 validated = checkpointer.enforce("step_1", raw_output, OutputSchema)
 ```
 ## Contributing
-
 Fork the repo, open a PR with tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and CI commands.
 
 ## License
