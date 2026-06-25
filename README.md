@@ -150,7 +150,6 @@ checkpointer = ContractCheckpointer(run_id)
 # Automatically normalizes and hashes the AST (Abstract Syntax Tree) of the validator, global constants, and helper functions to detect logic drift without false positives!
 validated = checkpointer.enforce("step_1", raw_output, OutputSchema)
 ```
-
 ## Contributing
 
 Fork the repo, open a PR with tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and CI commands.
